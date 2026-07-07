@@ -14,6 +14,44 @@ logger = logging.getLogger(__name__)
 PROXMOX_API_VIEWER_URL = "https://pve.proxmox.com/pve-docs/api-viewer/"
 PROXMOX_APIDOC_JS_URL = "https://pve.proxmox.com/pve-docs/api-viewer/apidoc.js"
 
+def fix_property_types(props: dict) -> dict:
+    """
+    Fix inconsistent Proxmox schema types (e.g. string vs integer in format).
+    """
+    if not isinstance(props, dict):
+        return props
+
+    for key, prop in props.items():
+        if not isinstance(prop, dict):
+            continue
+
+        base_type = prop.get("type")
+
+        # Only process string types with format
+        if base_type == "string" and "format" in prop:
+            fmt_block = prop.get("format", {})
+
+            detected_types = set()
+
+            for _, fmt in fmt_block.items():
+                if isinstance(fmt, dict):
+                    t = fmt.get("type")
+                    if t:
+                        detected_types.add(t)
+
+            # Fix mismatches
+            if "integer" in detected_types:
+                prop["type"] = "integer"
+            elif "number" in detected_types:
+                prop["type"] = "number"
+            elif "boolean" in detected_types:
+                prop["type"] = "boolean"
+
+        # Recursive handling
+        if "properties" in prop:
+            prop["properties"] = fix_property_types(prop["properties"])
+
+    return props
 
 def fetch_apidoc_js(
     url: str = PROXMOX_APIDOC_JS_URL,
@@ -121,12 +159,26 @@ def flatten_api_schema(schema_tree: list[dict[str, object]]) -> dict[str, dict[s
     def walk(node: dict[str, object]) -> None:
         path = node.get("path")
         if path:
-            output[path] = {
-                "path": path,
-                "text": node.get("text"),
-                "leaf": node.get("leaf"),
-                "info": node.get("info", {}),
-            }
+#            output[path] = {
+#                "path": path,
+#                "text": node.get("text"),
+#                "leaf": node.get("leaf"),
+#                "info": node.get("info", {}),
+#            }
+             info = node.get("info", {})
+             # Apply type fixes
+             if isinstance(info, dict) and "parameters" in info:
+                 for param in info.get("parameters", []):
+                     if isinstance(param, dict) and "properties" in param:
+                         param["properties"] = fix_property_types(param["properties"])
+
+             output[path] = {
+                 "path": path,
+                 "text": node.get("text"),
+                 "leaf": node.get("leaf"),
+                 "info": info,
+             }
+
         for child in node.get("children", []) or []:
             walk(child)
 
