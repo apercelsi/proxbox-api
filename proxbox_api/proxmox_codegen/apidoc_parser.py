@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 PROXMOX_API_VIEWER_URL = "https://pve.proxmox.com/pve-docs/api-viewer/"
 PROXMOX_APIDOC_JS_URL = "https://pve.proxmox.com/pve-docs/api-viewer/apidoc.js"
 
+'''
 def fix_property_types(props: dict) -> dict:
     """
     Fix inconsistent Proxmox schema types (e.g. string vs integer in format).
@@ -53,6 +54,49 @@ def fix_property_types(props: dict) -> dict:
 
     return props
 
+
+
+def fix_property_types(props: dict) -> dict:
+    if not isinstance(props, dict):
+        return props
+
+    for key, prop in props.items():
+        if not isinstance(prop, dict):
+            continue
+
+        base_type = prop.get("type")
+        desc = (prop.get("description") or "").lower()
+
+        # ? 1. Fix "format"-based inconsistencies
+        detected_types = set()
+
+        if "format" in prop and isinstance(prop["format"], dict):
+            for _, fmt in prop["format"].items():
+                if isinstance(fmt, dict):
+                    t = fmt.get("type")
+                    if t:
+                        detected_types.add(t)
+
+        if base_type == "string":
+            if "integer" in detected_types:
+                prop["type"] = "integer"
+            elif "number" in detected_types:
+                prop["type"] = "number"
+
+        # ? 2. HARD FIX for known Proxmox inconsistencies
+        # THIS is what solves your issue
+        if base_type == "string":
+            if "Memory properties" in desc:
+                prop["type"] = "integer"
+            elif "ram" in desc:
+                prop["type"] = "integer"
+
+        # ? recursion
+        if "properties" in prop:
+            prop["properties"] = fix_property_types(prop["properties"])
+
+    return props
+'''
 def fetch_apidoc_js(
     url: str = PROXMOX_APIDOC_JS_URL,
     timeout: int = 60,
@@ -159,26 +203,12 @@ def flatten_api_schema(schema_tree: list[dict[str, object]]) -> dict[str, dict[s
     def walk(node: dict[str, object]) -> None:
         path = node.get("path")
         if path:
-#            output[path] = {
-#                "path": path,
-#                "text": node.get("text"),
-#                "leaf": node.get("leaf"),
-#                "info": node.get("info", {}),
-#            }
-             info = node.get("info", {})
-             # Apply type fixes
-             if isinstance(info, dict) and "parameters" in info:
-                 for param in info.get("parameters", []):
-                     if isinstance(param, dict) and "properties" in param:
-                         param["properties"] = fix_property_types(param["properties"])
-
-             output[path] = {
-                 "path": path,
-                 "text": node.get("text"),
-                 "leaf": node.get("leaf"),
-                 "info": info,
-             }
-
+            output[path] = {
+                "path": path,
+                "text": node.get("text"),
+                "leaf": node.get("leaf"),
+                "info": node.get("info", {}),
+            }
         for child in node.get("children", []) or []:
             walk(child)
 

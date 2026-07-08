@@ -32,6 +32,13 @@ ARG DEV_OVERRIDES=""
 RUN uv sync --frozen --no-dev --no-editable && \
     if [ -n "${DEV_OVERRIDES}" ]; then uv pip install --python /app/.venv/bin/python ${DEV_OVERRIDES}; fi
 
+
+
+# THIS IS THE CRITICAL FIX
+#RUN rm -rf /app/.venv/lib/python3.13/site-packages/proxbox_api && \
+#    cp -r /app/proxbox_api /app/.venv/lib/python3.13/site-packages/
+
+
 # Optional native reconciliation engine build. This intentionally stays out of
 # the default builder so the published latest/version images remain Python-only.
 FROM builder AS builder-pyo3-rust
